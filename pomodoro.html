@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>番茄钟</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #faf5f0;
+      --surface: #fff;
+      --accent: #e05a3a;
+      --accent-light: #fde8e2;
+      --text: #1a1a1a;
+      --muted: #888;
+      --border: #e8e0d8;
+      --radius: 16px;
+      --transition: 0.4s ease;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition);
+    }
+
+    body.break-mode {
+      --bg: #f0f5fa;
+      --accent: #2e86c1;
+      --accent-light: #ddeeff;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 32px rgba(0,0,0,0.08);
+      padding: 48px 56px;
+      width: 380px;
+      text-align: center;
+      transition: box-shadow var(--transition);
+    }
+
+    /* Mode badge */
+    .mode-badge {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-light);
+      padding: 4px 14px;
+      border-radius: 99px;
+      margin-bottom: 28px;
+      transition: background var(--transition), color var(--transition);
+    }
+
+    /* Timer display */
+    .timer {
+      font-size: 80px;
+      font-weight: 700;
+      letter-spacing: -2px;
+      line-height: 1;
+      color: var(--text);
+      margin-bottom: 40px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 40px;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 12px 28px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:active { transform: scale(0.96); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      min-width: 100px;
+      transition: background var(--transition);
+    }
+    .btn-primary:hover { opacity: 0.88; }
+
+    .btn-secondary {
+      background: var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { opacity: 0.75; }
+
+    /* Settings */
+    .settings {
+      border-top: 1px solid var(--border);
+      padding-top: 28px;
+      display: flex;
+      gap: 24px;
+      justify-content: center;
+    }
+
+    .setting-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .setting-item label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+
+    .setting-item input {
+      width: 68px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 600;
+      padding: 8px 6px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      background: transparent;
+      outline: none;
+      transition: border-color 0.15s;
+      font-variant-numeric: tabular-nums;
+    }
+    .setting-item input:focus {
+      border-color: var(--accent);
+    }
+
+    .setting-item .unit {
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="mode-badge" id="modeBadge">专注</div>
+    <div class="timer" id="timerDisplay">25:00</div>
+    <div class="controls">
+      <button class="btn-primary" id="btnStartPause">开始</button>
+      <button class="btn-secondary" id="btnReset">重置</button>
+    </div>
+    <div class="settings">
+      <div class="setting-item">
+        <label>专注时长</label>
+        <input type="number" id="workMin" value="25" min="1" max="99" />
+        <span class="unit">分钟</span>
+      </div>
+      <div class="setting-item">
+        <label>休息时长</label>
+        <input type="number" id="breakMin" value="5" min="1" max="99" />
+        <span class="unit">分钟</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const display   = document.getElementById('timerDisplay');
+    const badge     = document.getElementById('modeBadge');
+    const btnSP     = document.getElementById('btnStartPause');
+    const btnReset  = document.getElementById('btnReset');
+    const workInput  = document.getElementById('workMin');
+    const breakInput = document.getElementById('breakMin');
+
+    let mode      = 'work';   // 'work' | 'break'
+    let remaining = 25 * 60;  // seconds
+    let running   = false;
+    let ticker    = null;
+
+    function fmt(secs) {
+      const m = String(Math.floor(secs / 60)).padStart(2, '0');
+      const s = String(secs % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function render() {
+      display.textContent = fmt(remaining);
+      badge.textContent   = mode === 'work' ? '专注' : '休息';
+      btnSP.textContent   = running ? '暂停' : '开始';
+      document.body.classList.toggle('break-mode', mode === 'break');
+      document.title      = `${fmt(remaining)} · ${mode === 'work' ? '专注' : '休息'} — 番茄钟`;
+    }
+
+    function tick() {
+      if (remaining > 0) {
+        remaining--;
+        render();
+      } else {
+        onComplete();
+      }
+    }
+
+    function onComplete() {
+      clearInterval(ticker);
+      ticker  = null;
+      running = false;
+      playBell();
+      const nextLabel = mode === 'work' ? '休息' : '专注';
+      showNotification(`${mode === 'work' ? '专注结束' : '休息结束'}，开始${nextLabel}吧！`);
+      mode      = mode === 'work' ? 'break' : 'work';
+      remaining = getDuration(mode);
+      render();
+    }
+
+    function getDuration(m) {
+      const raw = m === 'work'
+        ? parseInt(workInput.value, 10)
+        : parseInt(breakInput.value, 10);
+      return (isNaN(raw) || raw < 1 ? (m === 'work' ? 25 : 5) : raw) * 60;
+    }
+
+    function startPause() {
+      if (running) {
+        clearInterval(ticker);
+        ticker  = null;
+        running = false;
+      } else {
+        running = true;
+        ticker  = setInterval(tick, 1000);
+      }
+      render();
+    }
+
+    function reset() {
+      clearInterval(ticker);
+      ticker    = null;
+      running   = false;
+      remaining = getDuration(mode);
+      render();
+    }
+
+    function playBell() {
+      try {
+        const ctx  = new AudioContext();
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+
+        // Two-tone chord: fundamental + major third
+        const osc2  = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.type = 'sine';
+
+        const t = ctx.currentTime;
+        osc.frequency.value  = 880;
+        osc2.frequency.value = 1108; // A5 + C#6
+
+        gain.gain.setValueAtTime(0.5, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 2);
+        gain2.gain.setValueAtTime(0.3, t);
+        gain2.gain.exponentialRampToValueAtTime(0.001, t + 2);
+
+        osc.start(t);  osc.stop(t + 2);
+        osc2.start(t); osc2.stop(t + 2);
+      } catch (_) {}
+    }
+
+    async function showNotification(msg) {
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+      if (Notification.permission === 'granted') {
+        new Notification('番茄钟', { body: msg, icon: '' });
+      }
+    }
+
+    // Live update when idle (not running, not paused mid-session)
+    function onSettingChange() {
+      if (!running) {
+        remaining = getDuration(mode);
+        render();
+      }
+      // If running/paused: takes effect next cycle (do nothing now)
+    }
+
+    btnSP.addEventListener('click', startPause);
+    btnReset.addEventListener('click', reset);
+    workInput.addEventListener('input', onSettingChange);
+    breakInput.addEventListener('input', onSettingChange);
+
+    // Boot
+    render();
+  </script>
+</body>
+</html>
